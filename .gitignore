@@ -1,0 +1,10 @@
+agent_memory.db
+__pycache__/
+*.pyc
+.env
+.security_key
+*.jpg
+*.png
+*.db
+security_key
+secure_config.json
