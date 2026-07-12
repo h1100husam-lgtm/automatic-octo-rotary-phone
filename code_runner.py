@@ -1,22 +1,29 @@
 # ═══════════════════════════════════════════
-# تنفيذ أكواد Python
+# تنفيذ أكواد Python - مع sandbox
 # ═══════════════════════════════════════════
 import subprocess
 import tempfile
 import os
 
+from sandbox import validate_code
 
-async def execute_python_code(code, timeout=30):
-    """تنفيذ كود Python"""
+
+async def execute_python_code(code: str, timeout: int = 30) -> dict:
+    """تنفيذ كود Python مع فحص أمني."""
+    valid, reason = validate_code(code)
+    if not valid:
+        return {'success': False, 'output': None, 'error': f"🔒 كود مرفوض: {reason}"}
+
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
             f.write(code)
             temp_path = f.name
 
         result = subprocess.run(
-            ['python', temp_path],
+            ['python', '-I', temp_path],  # -I = isolated mode, no user site
             capture_output=True, text=True, timeout=timeout,
-            cwd=tempfile.gettempdir()
+            cwd=tempfile.gettempdir(),
+            env={'PATH': os.environ.get('PATH', ''), 'PYTHONDONTWRITEBYTECODE': '1'},
         )
 
         os.unlink(temp_path)

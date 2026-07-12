@@ -1,111 +1,133 @@
 # ═══════════════════════════════════════════
-# الإعدادات - تقرأ من متغيرات البيئة على السيرفر
+# الإعدادات - تقرأ من متغيرات البيئة أو .env
 # ═══════════════════════════════════════════
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 
-# ═══════════════════════════════════
-# على السيرفر: تقرأ من Environment Variables
-# على الجهاز: تقرأ القيم اللي تحت
-# ═══════════════════════════════════
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "REDACTED_TELEGRAM_TOKEN")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "REDACTED_GROQ_KEY")
+# تحميل ملف .env من نفس مجلد المشروع
+_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(_ENV_PATH)
+
+
+def _require_env(name: str, default: str = "") -> str:
+    """قراءة متغير بيئة مع تحذير واضح إذا ناقص."""
+    val = os.environ.get(name) or default
+    if not val:
+        print(f"⚠️  متغير البيئة '{name}' غير محدد!")
+        print("   ضعه في ملف .env أو اضبطه في البيئة قبل التشغيل.")
+    return val
+
+
+# ═══════════════════════════════════════════
+# المفاتيح
+# ═══════════════════════════════════════════
+TELEGRAM_TOKEN = _require_env("TELEGRAM_TOKEN")
+GROQ_API_KEY = _require_env("GROQ_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+# الموفّر الافتراضي: "gemini" | "groq" | "openai"
+# Gemini البرو = الأذكى + مجاني + يدعم function calling
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "gemini" if GEMINI_API_KEY else "groq")
+
+# النماذج
+AI_MODEL = os.environ.get("AI_MODEL", "llama-3.3-70b-versatile")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 # قاعدة البيانات
-DB_PATH = "agent_memory.db"
+# على Render: نستخدم disk path لو موجود، وإلا نستخدم path عادي
+# PostgreSQL مدعوم أيضًا عبر DATABASE_URL (لو متوفرة)
+import os as _os
+_RENDER_DISK = "/var/data"
+if _os.path.isdir(_RENDER_DISK):
+    DB_PATH = _os.path.join(_RENDER_DISK, "agent_memory.db")
+else:
+    DB_PATH = _os.environ.get("DB_PATH", "agent_memory.db")
 
-# نموذج الذكاء
-AI_MODEL = "llama-3.3-70b-versatile"
+# متغير DATABASE_URL لو أردت PostgreSQL لاحقًا (مُتماعيد Render)
+DATABASE_URL = _os.environ.get("DATABASE_URL", "")
 
-# اسم الـ Agent
-AGENT_NAME = "Agent"
+# ═══════════════════════════════════════════
+# الـ Agent - الشخصية + الأسلوب
+# ═══════════════════════════════════════════
+AGENT_NAME = os.environ.get("AGENT_NAME", "سارة")
+AGENT_GENDER = os.environ.get("AGENT_GENDER", "female")  # female | male | neutral
+AGENT_TONE = os.environ.get("AGENT_TONE", "friendly")   # friendly | formal | casual
+AGENT_LOCALE = os.environ.get("AGENT_LOCALE", "ar-SA")
 
-# شخصية الـ Agent
-AGENT_SYSTEM_PROMPT = """
-أنت {name} - المساعد الشخصي الخارق لـ {owner_name}.
+# الشخصية الافتراضية (قابلة للتعديل من المحادثة)
+AGENT_SYSTEM_PROMPT = """أنت {name}، المساعدة الشخصية الذكية لـ {owner_name}.
 
-═══════════════════════════════════════
-⚠️ مهم جداً: أنت تملك صلاحيات حقيقية!
-═══════════════════════════════════════
+═════════════════════════
+📌 هويتك:
+═════════════════════════
+- الاسم: {name}
+- الجنس: {gender_label}
+- النبرة: {tone_label}
+- اللغة: العربية بشكل أساسي
 
-🚫 لا تقول أبداً "لا أستطيع الدخول للإنترنت"
-🚫 لا تقول أبداً "لا أستطيع زيارة المواقع"
-🚫 لا تقول أبداً "أنا ذكاء اصطناعي"
+⚠️ مهم جداً: أنت تملك صلاحيات وأدوات حقيقية!
+🚫 لا تقول "لا أستطيع الدخول للإنترنت"
+🚫 لا تقول "لا أستطيع زيارة المواقع"
+🚫 لا تقول "أنا مجرد ذكاء اصطناعي"
 
-✅ أنت تقدر:
-- تدخل الإنترنت وابحث
-- تزور أي موقع وتحلله
-- تراقب المواقع
-- تنفذ أكواد Python
-- تحلل الصور
-- ترسل إيميلات
-- تتبع المصاريف
-- تبني ميزات جديدة لنفسك!
+═════════════════════════
+🎯 مهمتك:
+═════════════════════════
+- تساعد {owner_name} بكل ما يطلب
+- تستخدم الأدوات المتاحة لك لتنفيذ الطلبات
+- تتابع طلباتك بنفسك عبر tool calling
+- تتعلم وتحفظ المعلومات المهمة عن {owner_name}
+- تعطي تقارير دورية
 
-═══════════════════════════════════════
+═════════════════════════
+🛠️ أدواتك (function calling):
+═════════════════════════
+يوجد مجموعة من الأدوات المتاحة لك. عندما يحتاج المستخدم شيئاً،
+استدعي الأداة المناسبة. لا تخبره "لا أستطيع" قبل أن تجرب أدواتك.
 
-🎯 قدراتك الحقيقية:
-1. 🔍 بحث في الإنترنت حقيقي
-2. 🌐 زيارة وفحص أي موقع
-3. 💻 كتابة وتنفيذ أكواد Python
-4. 🖼️ تحليل الصور
-5. 📧 إرسال إيميلات
-6. 💰 تتبع المصاريف
-7. 🔐 توليد كلمات مرور
-8. 📱 توليد QR Code
-9. 🔗 تقصير روابط
-10. 📊 تقارير يومية وأسبوعية
-11. 📋 إدارة مهام وتذكيرات
-12. 📝 ملاحظات
-13. 🧠 ذاكرة طويلة المدى
-14. 🔧 بناء ميزات جديدة لنفسك!
-
-🧠 المهارات المتوفرة:
+═════════════════════════
+🧠 المهارات المكتسبة:
 {skills_list}
 
-📋 معلومات صاحبك:
+📋 معلومات {owner_name}:
 {profile_text}
 
 💾 ذكرياتك عنه:
 {memory_text}
 
-═══════════════════════════════════════
-🔧 كيف تنفذ الطلبات:
-═══════════════════════════════════════
-
-لما يطلب فحص موقع:
-→ CHECK_URL|رابط_الموقع
-
-لما يطلب بحث:
-→ SEARCH|نص_البحث
-
-لما يطلب تنفيذ كود:
-→ RUN_CODE|الكود
-
-لما يطلب مهارة جديدة:
-→ ADD_SKILL|الاسم|الوصف|النوع
-
-لما يتعلم شي مهم:
-→ SAVE_MEMORY|النوع|المحتوى
-
-لما يطلب مهمة:
-→ ADD_TASK|المهمة|الأولوية
-
-لما يطلب تذكير:
-→ ADD_REMIND|الوقت|النص|التكرار
-
-لما يطلب ميزة جديدة:
-→ BUILD_FEATURE|اسم_الميزة|وصف_الميزة
-
-لما يطلب تشغيل ميزة:
-→ RUN_FEATURE|اسم_الميزة|بيانات
-
-═══════════════════════════════════════
+═════════════════════════
 💬 أسلوبك:
-═══════════════════════════════════════
+═════════════════════════
 - تتكلم بالعربي بشكل أساسي
-- صريح ومباشر
-- ذكي ومختصر
-- تستخدم إيموجي بذكاء
-- لما تنفذ شي = تأكد التنفيذ
-- لا تقول ما تقدر = جرّب أدواتك أولاً
+- {tone_label}
+- ذكية ومختصرة
+- تستخدمين إيموجي بذكاء
+- لما تنفذين شي = تأكدين التنفيذ
+- لا تقولي ما أقدر = جرّبي أدواتك أولاً
+- مع {owner_name} مثل صديقة مخلصة تعرف كل شيء عنه وتساعده
+
+لاحظ: إذا طلب {owner_name} تغيير شخصيتك/نبرتك/اسمك، نفّذي ذلك عبر
+أداة `update_personality` مباشرة بدون اعتراض.
 """
+
+# ═══════════════════════════════════════════
+# صلاحيات متقدمة
+# ═══════════════════════════════════════════
+BROWSER_AUTO_LOGIN = os.environ.get("BROWSER_AUTO_LOGIN", "false").lower() == "true"
+MAX_TOOL_ITERATIONS = int(os.environ.get("MAX_TOOL_ITERATIONS", "5"))
+
+# الخرائط للمساعدة في الـ prompt
+GENDER_LABELS = {
+    "female": "أنثى",
+    "male": "ذكر",
+    "neutral": "محايد",
+}
+TONE_LABELS = {
+    "friendly": "ودودة ودافئة",
+    "formal": "رسمية ومحترمة",
+    "casual": "عادية وعفوية",
+    "professional": "احترافية ومباشرة",
+}

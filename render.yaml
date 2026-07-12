@@ -1,0 +1,36 @@
+# ═══════════════════════════════════════════
+# Render Blueprint - نشر وكيل "سارة" بسرعة
+# ═══════════════════════════════════════════
+# 1. ارفع هذا الملف مع الكود على GitHub
+# 2. على Render: New → Blueprint → اختر repo
+# 3. Render سيقرأ هذا الملف ويرفع كل شي تلقائياً
+# 4. أضف Environment Variables (TELEGRAM_TOKEN, GROQ_API_KEY, ...)
+# ═══════════════════════════════════════════
+services:
+  - type: worker
+    name: sara-agent
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    # متغيرات البيئة: اضبطها من لوحة Render (Environment)
+    envVars:
+      - key: AI_PROVIDER
+        value: groq
+      - key: AGENT_NAME
+        value: سارة
+      - key: AGENT_GENDER
+        value: female
+      - key: AGENT_TONE
+        value: friendly
+      # هذه المفاتيح أُدخلها بأنك من لوحة Render:
+      # - key: TELEGRAM_TOKEN
+      # - key: GROQ_API_KEY
+      # - key: GEMINI_API_KEY  (اختياري)
+      # - key: OPENAI_API_KEY  (اختياري)
+    # قرص دائم لحفظ قاعدة SQLite (1GB مجاني)
+    disk:
+      name: agent-data
+      mountPath: /var/data
+      sizeGB: 1

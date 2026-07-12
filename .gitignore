@@ -2,9 +2,24 @@ agent_memory.db
 __pycache__/
 *.pyc
 .env
+.env.local
+.env.*.local
 .security_key
+secure_config.json
+security_key
+
+# Temp / runtime artifacts
 *.jpg
 *.png
 *.db
-security_key
-secure_config.json
+*.db-journal
+*.db-wal
+*.db-shm
+_bot_output.txt
+_bot_error.txt
+
+# IDE / system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

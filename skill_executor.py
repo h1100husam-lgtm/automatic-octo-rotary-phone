@@ -1,20 +1,23 @@
 # ═══════════════════════════════════════════
 # محرك تنفيذ الأوامر - مُحدّث
 # ═══════════════════════════════════════════
+import logging
 from memory import (
     add_skill, add_task, add_reminder,
     save_to_long_memory, save_note, update_profile
 )
 
+logger = logging.getLogger("agent.skills")
+
 
 async def parse_and_execute(user_id, agent_reply):
-    """تحليل رد الـ AI واستخراج الأوامر وتنفيذها"""
+    """تحليل رد الـ AI واستخراج الأوامر وتنفيذها بشكل صامت في الخلفية."""
     actions = []
     clean_reply = agent_reply
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 1. فحص موقع
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "CHECK_URL|" in agent_reply:
         try:
             from site_monitor import check_site
@@ -25,10 +28,7 @@ async def parse_and_execute(user_id, agent_reply):
             if not url.startswith("http"):
                 url = "https://" + url
 
-            # فحص سريع
             quick = await check_site(url)
-
-            # فحص عميق
             deep = await deep_check_site(url)
             report = await format_site_report(deep)
 
@@ -40,9 +40,9 @@ async def parse_and_execute(user_id, agent_reply):
         except Exception as e:
             actions.append(f"⚠️ خطأ فحص الموقع: {str(e)}")
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 2. بحث في الإنترنت
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "SEARCH|" in agent_reply:
         try:
             from web_search import search_and_format
@@ -55,9 +55,9 @@ async def parse_and_execute(user_id, agent_reply):
         except Exception as e:
             actions.append(f"⚠️ خطأ البحث: {str(e)}")
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 3. تنفيذ كود
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "RUN_CODE|" in agent_reply:
         try:
             from code_runner import execute_python_code, format_code_result
@@ -71,9 +71,9 @@ async def parse_and_execute(user_id, agent_reply):
         except Exception as e:
             actions.append(f"⚠️ خطأ التنفيذ: {str(e)}")
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 4. إضافة مهارة
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "ADD_SKILL|" in agent_reply:
         try:
             part = agent_reply.split("ADD_SKILL|")[1].split("\n")[0].strip()
@@ -82,12 +82,12 @@ async def parse_and_execute(user_id, agent_reply):
                 await add_skill(user_id, items[0].strip(), items[1].strip(), items[2].strip())
                 actions.append(f"✅ مهارة جديدة: {items[0].strip()}")
                 clean_reply = clean_reply.replace(f"ADD_SKILL|{part}", "")
-        except:
+        except Exception:
             pass
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 5. حفظ ذاكرة
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "SAVE_MEMORY|" in agent_reply:
         try:
             part = agent_reply.split("SAVE_MEMORY|")[1].split("\n")[0].strip()
@@ -97,12 +97,12 @@ async def parse_and_execute(user_id, agent_reply):
                 await save_to_long_memory(user_id, items[0].strip(), items[1].strip(), importance)
                 actions.append(f"🧠 ذاكرة: {items[1].strip()[:50]}")
                 clean_reply = clean_reply.replace(f"SAVE_MEMORY|{part}", "")
-        except:
+        except Exception:
             pass
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 6. إضافة مهمة
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "ADD_TASK|" in agent_reply:
         try:
             part = agent_reply.split("ADD_TASK|")[1].split("\n")[0].strip()
@@ -111,12 +111,12 @@ async def parse_and_execute(user_id, agent_reply):
             await add_task(user_id, items[0].strip(), priority)
             actions.append(f"📋 مهمة: {items[0].strip()}")
             clean_reply = clean_reply.replace(f"ADD_TASK|{part}", "")
-        except:
+        except Exception:
             pass
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 7. تذكير
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "ADD_REMIND|" in agent_reply:
         try:
             part = agent_reply.split("ADD_REMIND|")[1].split("\n")[0].strip()
@@ -126,12 +126,12 @@ async def parse_and_execute(user_id, agent_reply):
                 await add_reminder(user_id, items[1].strip(), items[0].strip(), repeat)
                 actions.append(f"🔔 تذكير: {items[1].strip()}")
                 clean_reply = clean_reply.replace(f"ADD_REMIND|{part}", "")
-        except:
+        except Exception:
             pass
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 8. ملاحظة
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "SAVE_NOTE|" in agent_reply:
         try:
             part = agent_reply.split("SAVE_NOTE|")[1].split("\n")[0].strip()
@@ -141,12 +141,12 @@ async def parse_and_execute(user_id, agent_reply):
                 await save_note(user_id, items[0].strip(), items[1].strip(), cat)
                 actions.append(f"📝 ملاحظة: {items[0].strip()}")
                 clean_reply = clean_reply.replace(f"SAVE_NOTE|{part}", "")
-        except:
+        except Exception:
             pass
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 9. تحديث الملف
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "UPDATE_PROFILE|" in agent_reply:
         try:
             part = agent_reply.split("UPDATE_PROFILE|")[1].split("\n")[0].strip()
@@ -158,19 +158,12 @@ async def parse_and_execute(user_id, agent_reply):
                 await update_profile(user_id, **kwargs)
                 actions.append("📋 تم تحديث ملفك")
                 clean_reply = clean_reply.replace(f"UPDATE_PROFILE|{part}", "")
-        except:
+        except Exception:
             pass
 
-    clean_reply = clean_reply.strip()
-    if not clean_reply:
-        clean_reply = "✅ تم تنفيذ طلبك!"
-
-    return clean_reply, actions
-
-
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 10. بناء ميزة جديدة
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "BUILD_FEATURE|" in agent_reply:
         try:
             from self_builder import build_feature
@@ -193,9 +186,9 @@ async def parse_and_execute(user_id, agent_reply):
         except Exception as e:
             actions.append(f"⚠️ خطأ البناء: {str(e)}")
 
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     # 11. تشغيل ميزة مبنية
-    # ═══════════════════════════════
+    # ═══════════════════════════════════════
     if "RUN_FEATURE|" in agent_reply:
         try:
             from self_builder import execute_feature
@@ -215,3 +208,17 @@ async def parse_and_execute(user_id, agent_reply):
             clean_reply = clean_reply.replace(f"RUN_FEATURE|{part}", "")
         except Exception as e:
             actions.append(f"⚠️ خطأ: {str(e)}")
+
+    # ═══════════════════════════════════════
+    # النهاية: تنفيذ صامت في الخلفية
+    # ═══════════════════════════════════════
+    clean_reply = clean_reply.strip()
+    if not clean_reply:
+        clean_reply = "✅ تم تنفيذ طلبك!"
+
+    # تسجيل الأدوات المنفّذة في logs فقط (لا تظهر للمستخدم)
+    if actions:
+        logger.info(f"أدوات نُفّذت بصمت: {' | '.join(actions)}")
+
+    # نُرجع قائمة فارغة لئلا يُظهر main.py أي شيء للمستخدم
+    return clean_reply, []

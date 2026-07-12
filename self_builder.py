@@ -6,9 +6,13 @@ import os
 import json
 import subprocess
 import tempfile
+import logging
 import aiosqlite
 from datetime import datetime
 from config import DB_PATH, GROQ_API_KEY, AI_MODEL
+from sandbox import validate_code, sanitize_input
+
+logger = logging.getLogger("agent.builder")
 
 
 # ═══════════════════════════════════
@@ -17,6 +21,8 @@ from config import DB_PATH, GROQ_API_KEY, AI_MODEL
 async def init_self_builder():
     """تهيئة جدول البناء الذاتي"""
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS self_features (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,7 +48,7 @@ async def init_self_builder():
             )
         """)
         await db.commit()
-    print("✅ محرك البناء الذاتي جاهز!")
+    logger.info("✅ محرك البناء الذاتي جاهز!")
 
 
 # ═══════════════════════════════════
@@ -50,6 +56,10 @@ async def init_self_builder():
 # ═══════════════════════════════════
 async def generate_feature_code(feature_name, feature_description, user_context=""):
     """الذكاء الاصطناعي يكتب كود للميزة"""
+
+    import re as _re
+    if not _re.match(r"^[a-zA-Z\u0600-\u06FF][\w\u0600-\u06FF ]{0,49}$", feature_name):
+        return "# خطأ: اسم الميزة غير صالح (أحرف إنجليزية أو عربية فقط)"
 
     from groq import Groq
     client = Groq(api_key=GROQ_API_KEY)
@@ -105,6 +115,10 @@ async def generate_feature_code(feature_name, feature_description, user_context=
 async def test_feature_code(code):
     """اختبار الكود قبل حفظه"""
 
+    valid, reason = validate_code(code)
+    if not valid:
+        return False, f"🔒 كود مرفوض أمنياً: {reason}"
+
     try:
         with tempfile.NamedTemporaryFile(
             mode='w', suffix='.py', delete=False
@@ -139,9 +153,10 @@ asyncio.run(test())
             temp_path = f.name
 
         result = subprocess.run(
-            ['python', temp_path],
+            ['python', '-I', temp_path],
             capture_output=True, text=True, timeout=15,
-            cwd=tempfile.gettempdir()
+            cwd=tempfile.gettempdir(),
+            env={'PATH': os.environ.get('PATH', ''), 'PYTHONDONTWRITEBYTECODE': '1'},
         )
 
         os.unlink(temp_path)
@@ -204,6 +219,12 @@ async def execute_feature(user_id, feature_name, input_data=""):
 
     feature_id, name, code = feature
 
+    valid, reason = validate_code(code)
+    if not valid:
+        return False, f"🔒 الميزة تحتوي كود مرفوض: {reason}"
+
+    input_data = sanitize_input(input_data)
+
     try:
         # كتابة كود التنفيذ
         with tempfile.NamedTemporaryFile(
@@ -235,9 +256,10 @@ print(asyncio.run(run()))
             temp_path = f.name
 
         result = subprocess.run(
-            ['python', temp_path],
+            ['python', '-I', temp_path],
             capture_output=True, text=True, timeout=30,
-            cwd=tempfile.gettempdir()
+            cwd=tempfile.gettempdir(),
+            env={'PATH': os.environ.get('PATH', ''), 'PYTHONDONTWRITEBYTECODE': '1'},
         )
 
         os.unlink(temp_path)
@@ -360,5 +382,5 @@ async def fix_code(broken_code, error_message):
         return fixed.strip()
 
     except Exception as e:
-        print(f"❌ خطأ إصلاح الكود: {e}")
+        logger.error(f"❌ خطأ إصلاح الكود: {e}")
         return None

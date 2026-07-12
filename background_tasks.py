@@ -1,7 +1,8 @@
-# ═══════════════════════════════════════════
+﻿# ═══════════════════════════════════════════
 # المهمة الخلفية التلقائية
 # ═══════════════════════════════════════════
 import asyncio
+import logging
 import aiosqlite
 from datetime import datetime, timedelta
 from config import DB_PATH, AGENT_NAME
@@ -14,7 +15,9 @@ from site_monitor import check_site, monitor_all_sites
 from email_reports import generate_daily_report
 from email_sender import EmailSender
 
-# معرف المالك (يُحفظ تلقائي عند أول محادثة)
+logger = logging.getLogger("agent.background")
+
+# معرف المالك (يُحفظ تلقائيًا عند أول محادثة)
 OWNER_ID = None
 OWNER_NAME = None
 
@@ -25,6 +28,8 @@ async def set_owner(user_id, user_name):
     OWNER_ID = user_id
     OWNER_NAME = user_name
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=5000")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS bot_config (
                 key TEXT PRIMARY KEY,
@@ -40,7 +45,7 @@ async def set_owner(user_id, user_name):
             ("owner_name", str(user_name))
         )
         await db.commit()
-    print(f"👤 المالك: {user_name} (ID: {user_id})")
+    logger.info(f"👤 المالك: {user_name} (ID: {user_id})")
 
 
 async def get_owner():
@@ -94,10 +99,10 @@ async def check_reminders(bot):
 
             # تعليم كمرسل
             await mark_reminder_sent(rem_id)
-            print(f"🔔 تم إرسال تذكير: {text}")
+            logger.info(f"🔔 تذكير أُرسل: {text}")
 
     except Exception as e:
-        print(f"❌ خطأ التذكيرات: {e}")
+        logger.error(f"خطأ التذكيرات: {e}")
 
 
 # ═══════════════════════════════════════════
@@ -126,10 +131,10 @@ async def check_sites(bot):
 💡 افحص الموقع فوراً!""",
                     parse_mode='Markdown'
                 )
-                print(f"🚨 تنبيه: {result['site']} - {result['message']}")
+                logger.warning(f"تنبيه موقع: {result['site']} - {result['message']}")
 
     except Exception as e:
-        print(f"❌ خطأ المراقبة: {e}")
+        logger.error(f"خطأ المراقبة: {e}")
 
 
 # ═══════════════════════════════════════════
@@ -184,10 +189,10 @@ async def send_daily_report(bot):
             text=report,
             parse_mode='Markdown'
         )
-        print(f"📊 تم إرسال التقرير اليومي لـ {user_name}")
+        logger.info(f"📊 تقرير يومي أُرسل لـ {user_name}")
 
     except Exception as e:
-        print(f"❌ خطأ التقرير: {e}")
+        logger.error(f"خطأ التقرير: {e}")
 
 
 # ═══════════════════════════════════════════
@@ -219,10 +224,10 @@ async def send_tasks_reminder(bot):
             text=msg,
             parse_mode='Markdown'
         )
-        print(f"📋 تم إرسال تذكير المهام")
+        logger.info("📋 تذكير المهام أُرسل")
 
     except Exception as e:
-        print(f"❌ خطأ تذكير المهام: {e}")
+        logger.error(f"خطأ تذكير المهام: {e}")
 
 
 # ═══════════════════════════════════════════
@@ -286,10 +291,10 @@ async def send_weekly_report(bot):
             text=msg,
             parse_mode='Markdown'
         )
-        print(f"📊 تم إرسال التقرير الأسبوعي")
+        logger.info("📊 تقرير أسبوعي أُرسل")
 
     except Exception as e:
-        print(f"❌ خطأ التقرير الأسبوعي: {e}")
+        logger.error(f"خطأ التقرير الأسبوعي: {e}")
 
 
 # ═══════════════════════════════════════════
@@ -308,14 +313,14 @@ async def background_scheduler(bot):
     last_tasks_reminder = None
     last_weekly_report = None
 
-    print("=" * 60)
-    print("🔄 المهمة الخلفية التلقائية شغّالة!")
-    print("📋 التذكيرات: كل دقيقة")
-    print("🌐 المواقع: كل 5 دقائق")
-    print("📊 التقرير اليومي: الساعة 8 صباحاً")
-    print("📋 تذكير المهام: الساعة 9 صباحاً")
-    print("📊 التقرير الأسبوعي: الأحد الساعة 10 صباحاً")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("🔄 المهمة الخلفية التلقائية شغّالة!")
+    logger.info("📋 التذكيرات: كل دقيقة")
+    logger.info("🌐 المواقع: كل 5 دقائق")
+    logger.info("📊 التقرير اليومي: الساعة 8 صباحاً")
+    logger.info("📋 تذكير المهام: الساعة 9 صباحاً")
+    logger.info("📊 التقرير الأسبوعي: الأحد الساعة 10 صباحاً")
+    logger.info("=" * 60)
 
     while True:
         try:
@@ -361,7 +366,9 @@ async def background_scheduler(bot):
                     last_weekly_report = week_key
 
         except Exception as e:
-            print(f"❌ خطأ في المهمة الخلفية: {e}")
+            logger.error(f"خطأ في المهمة الخلفية: {e}")
 
         # انتظار دقيقة
         await asyncio.sleep(60)
+
+

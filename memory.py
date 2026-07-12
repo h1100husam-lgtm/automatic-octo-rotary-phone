@@ -1,14 +1,23 @@
 # ═══════════════════════════════════════════
 # نظام الذاكرة وقاعدة البيانات
 # ═══════════════════════════════════════════
+import logging
 import aiosqlite
 from datetime import datetime
 from config import DB_PATH
 
+logger = logging.getLogger("agent.memory")
+
 
 async def init_database():
-    """إنشاء كل الجداول"""
+    """إنشاء كل الجداول + تحسين أداء SQLite"""
     async with aiosqlite.connect(DB_PATH) as db:
+        # تحسينات الأداء: WAL mode للمزامنة المتزامنة
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
+        await db.execute("PRAGMA busy_timeout=5000")
+        await db.execute("PRAGMA cache_size=-8000")  # 8MB cache
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,7 +133,7 @@ async def init_database():
             )
         """)
         await db.commit()
-    print("✅ قاعدة البيانات جاهزة!")
+    logger.info("✅ قاعدة البيانات جاهزة!")
 
 
 # ═══════════════════════════════

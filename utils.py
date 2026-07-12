@@ -3,10 +3,11 @@
 # ═══════════════════════════════════════════
 import secrets
 import string
+from typing import Optional
 
 
-def generate_password(length=16, use_special=True):
-    """توليد كلمة مرور قوية"""
+def generate_password(length: int = 16, use_special: bool = True) -> tuple[str, str]:
+    """توليد كلمة مرور قوية. يرجع (كلمة_المرور, تقييم_القوة)."""
     chars = string.ascii_letters + string.digits
     if use_special:
         chars += "!@#$%^&*"
@@ -22,8 +23,8 @@ def generate_password(length=16, use_special=True):
     return password, strength
 
 
-def generate_qr(text, filename="qr.png"):
-    """توليد QR Code"""
+def generate_qr(text: str, filename: str = "qr.png") -> Optional[str]:
+    """توليد QR Code كصورة. يرجع المسار أو None."""
     try:
         import qrcode
         img = qrcode.make(text)
@@ -33,8 +34,8 @@ def generate_qr(text, filename="qr.png"):
         return None
 
 
-async def shorten_url(url):
-    """تقصير رابط"""
+async def shorten_url(url: str) -> dict[str, object]:
+    """تقصير رابط عبر tinyurl."""
     try:
         import pyshorteners
         s = pyshorteners.Shortener()

@@ -1,8 +1,10 @@
 # ═══════════════════════════════════════════
-# Agent v5.0 - النهائي للسيرفر
+# Agent v5.1 - النهائي للسيرفر (مُحسّن)
 # ═══════════════════════════════════════════
 import asyncio
+import logging
 import os
+import sys
 from telegram import Update
 from telegram.ext import (
     Application, MessageHandler, CommandHandler,
@@ -13,24 +15,27 @@ from config import TELEGRAM_TOKEN, AGENT_NAME
 from memory import (
     init_database, save_message, update_profile, get_profile,
     add_task, get_tasks, complete_task, save_note, get_notes,
-    add_site, get_sites, get_full_stats, get_skills,
+    add_site, get_full_stats, get_skills,
     add_expense, get_expenses_summary
 )
 from ai_engine import get_smart_reply
-from skill_executor import parse_and_execute
-from site_monitor import check_site
 from email_reports import generate_daily_report
 from email_sender import EmailSender
-from web_search import search_and_format
-from code_runner import execute_python_code, format_code_result
 from image_handler import analyze_image
-from site_fixer import deep_check_site, format_site_report
-from utils import generate_password, generate_qr, shorten_url
 from self_builder import (
     init_self_builder, build_feature,
     get_all_features, execute_feature
 )
 from background_tasks import background_scheduler, set_owner
+from main_async_helpers import set_current_user_id
+
+# إعداد logging بدل print
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("agent")
 
 email_service = EmailSender()
 
@@ -43,59 +48,32 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await set_owner(user.id, user.first_name)
     await update_profile(user.id, name=user.first_name)
 
-    await update.message.reply_text(f"""🤖 أهلاً {user.first_name}!
-أنا {AGENT_NAME} - مساعدك الشخصي الخارق 🧠
+    await update.message.reply_text(f"""🤖 أهلاً {user.first_name}! 👋
+أنا {AGENT_NAME} - مساعدتك الشخصية الذكية 🧠
 
-🎯 **قدراتي:**
+🎯 **قدراتي (تشتغل تلقائياً بدون أوامر!):**
+كلمني عادي وأنا أستخدم الأدوات اللي أحتاجها خلف الكواليس.
 
-🧠 ذكاء:
-/search - بحث في الإنترنت
-/code - تنفيذ أكواد Python
+🧠 **اللي أقدر أسويه:**
+🔍 أبحث في الإنترنت
+🌐 أفحص المواقع (سريع/عميق)
+💻 أنفّذ أكواد Python
+🖼️ أحلل الصور
+📧 أرسل إيميلات
+💰 أتبع مصاريفك
+🔐 أولّد كلمات مرور
+📱 أصنع QR Codes
+🔗 أقصر الروابط
+📋 أدير مهامك وملاحظاتك
+🧠 أحفظ ذكريات عنك
 
-📋 إنتاجية:
-/addtask - إضافة مهمة
-/tasks - مهامك
-/donetask - إنهاء مهمة
-/note - ملاحظة
-/mynotes - ملاحظاتك
+🧠 **تقدر تكلمني عادي وتطلب أي شي!** 🚀
 
-💰 مالية:
-/spent - تسجيل مصروف
-/expenses - تقرير مصاريف
+مثال: "ابحث لي عن كيف أتعلم بايثون"
+أو: "احفظ إن.pref القهوة"
+أو: "غيّري اسمك لـ نور وكوني رسمية"
 
-🌐 مراقبة:
-/addsite - مراقبة موقع
-/checksite - فحص موقع
-/deepcheck - فحص عميق
-
-📧 تقارير:
-/setemail - إعداد الإيميل
-/report - تقرير شامل
-
-🛠️ أدوات:
-/password - كلمة مرور
-/qr - توليد QR
-/shorturl - تقصير رابط
-
-🔧 البناء الذاتي:
-/build - بناء ميزة جديدة
-/run - تشغيل ميزة
-/features - ميزاتي المبنية
-
-📊 النظام:
-/skills - مهاراتي
-/stats - إحصائيات
-/profile - ملفك
-
-🖼️ أرسل صورة = أحللها!
-
-🔄 **الأتمتة:**
-🔔 تذكيرات فورية
-🌐 مراقبة مواقع كل 5 دقائق
-📊 تقرير يومي الساعة 8 صباحاً
-📋 تذكير مهام الساعة 9 صباحاً
-
-💬 أو كلمني عادي وأفهم! 🚀""")
+💡 **أوامر سريعة (اختيارية):**""")
 
 
 # ═══════════════════════════════════════
@@ -103,6 +81,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 جاري تحليل الصورة...")
+    image_path = None
     try:
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
@@ -112,9 +91,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_query = update.message.caption or ""
         result = await analyze_image(image_path, user_query)
         await update.message.reply_text(result)
-        os.remove(image_path)
     except Exception as e:
+        logger.exception("خطأ في تحليل الصورة")
         await update.message.reply_text(f"⚠️ خطأ: {str(e)}")
+    finally:
+        if image_path and os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+            except OSError:
+                pass
 
 
 # ═══════════════════════════════════════
@@ -392,8 +377,11 @@ async def donetask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await complete_task(user_id, int(context.args[0]))
         await update.message.reply_text(f"🎉 أحسنت! #{context.args[0]}")
-    except:
+    except ValueError:
         await update.message.reply_text("⚠️ رقم غير صحيح")
+    except Exception as e:
+        logger.exception("خطأ في إنهاء المهمة")
+        await update.message.reply_text("⚠️ حدث خطأ أثناء إنهاء المهمة")
 
 
 async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -455,6 +443,23 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🗑️ تم مسح المحادثات!")
 
 
+async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """health check: هل البوت والأدوات تعمل؟"""
+    from datetime import datetime
+    status_lines = [f"🟢 {AGENT_NAME} يعمل", f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
+    try:
+        import groq
+        status_lines.append("✅ groq SDK متوفر")
+    except ImportError:
+        status_lines.append("❌ groq SDK مفقود")
+    try:
+        import telegram
+        status_lines.append(f"✅ PTB {telegram.__version__}")
+    except (ImportError, AttributeError):
+        status_lines.append("✅ PTB متوفر")
+    await update.message.reply_text("\n".join(status_lines))
+
+
 # ═══════════════════════════════════════
 # معالجة الرسائل
 # ═══════════════════════════════════════
@@ -463,44 +468,62 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_user.first_name
     user_message = update.message.text
 
+    # ربط الـ user_id بـ execution context (للأدوات)
+    set_current_user_id(user_id)
+
     await set_owner(user_id, user_name)
     await save_message(user_id, user_name, "user", user_message)
     await update_profile(user_id, name=user_name)
 
     raw_reply = await get_smart_reply(user_id, user_name, user_message)
-    clean_reply, actions = await parse_and_execute(user_id, raw_reply)
 
-    if actions:
-        clean_reply += "\n\n" + "\n".join(actions)
+    await save_message(user_id, user_name, "assistant", raw_reply)
+    await update.message.reply_text(raw_reply)
 
-    await save_message(user_id, user_name, "assistant", clean_reply)
-    await update.message.reply_text(clean_reply)
-
-    print(f"✅ [{user_name}]: {user_message[:50]}")
-    print(f"🤖 [{AGENT_NAME}]: {clean_reply[:50]}\n")
+    logger.info(f"[{user_name}]: {user_message[:50]}")
+    logger.info(f"🤖: {raw_reply[:50]}")
 
 
 # ═══════════════════════════════════════
 # التشغيل
 # ═══════════════════════════════════════
+async def _post_init(application):
+    """يباشَر بعد بناء التطبيق: تشغيل المهام الخلفية."""
+    asyncio.create_task(background_scheduler(application.bot))
+    logger.info("🔄 الأتمتة مفعّلة!")
+
+
+async def _post_shutdown(application):
+    """تنظيف الموارد عند التوقف."""
+    from db_pool import close_db
+    await close_db()
+    logger.info("👋 تم إغلاق الاتصالات")
+
+
 def main():
-    loop = asyncio.get_event_loop()
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("loop closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     loop.run_until_complete(init_database())
     loop.run_until_complete(init_self_builder())
+    # تحميل Personality المحفوظة من DB (اسم/نبرة/تعليمات مخصصة)
+    from personality import load_personality
+    loop.run_until_complete(load_personality())
 
     print("=" * 60)
-    print(f"🚀 {AGENT_NAME} v5.0 - على السيرفر!")
+    print(f"🚀 {AGENT_NAME} v5.2 (Tool Calling) - على السيرفر!")
     print("📱 البوت شغّال 24/7!")
     print("=" * 60)
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-
-    # تشغيل المهام الخلفية
-    async def post_init(application):
-        asyncio.create_task(background_scheduler(application.bot))
-        print("🔄 الأتمتة مفعّلة!")
-
-    app.post_init = post_init
+    app.post_init = _post_init
+    app.post_shutdown = _post_shutdown
 
     # أوامر النظام
     app.add_handler(CommandHandler("start", start_command))
@@ -508,6 +531,7 @@ def main():
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("clear", clear_command))
+    app.add_handler(CommandHandler("health", health_command))
 
     # الإنتاجية
     app.add_handler(CommandHandler("addtask", addtask_command))
@@ -549,8 +573,8 @@ def main():
     # الرسائل
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("\n⏳ في انتظار الرسائل...\n")
-    app.run_polling()
+    logger.info("في انتظار الرسائل...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
