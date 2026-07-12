@@ -1,6 +1,6 @@
-# ═══════════════════════════════════════════
+# ════════════════════════════════════════════
 # Agent v5.1 - النهائي للسيرفر (مُحسّن)
-# ═══════════════════════════════════════════
+# ════════════════════════════════════════════
 import asyncio
 import logging
 import os
@@ -28,6 +28,8 @@ from self_builder import (
 )
 from background_tasks import background_scheduler, set_owner
 from main_async_helpers import set_current_user_id
+from db_pool import get_db_connection
+from config import DB_TYPE
 
 # إعداد logging بدل print
 logging.basicConfig(
@@ -40,9 +42,9 @@ logger = logging.getLogger("agent")
 email_service = EmailSender()
 
 
-# ═══════════════════════════════════════
+# ════════════════════════════════════════════
 # /start
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await set_owner(user.id, user.first_name)
@@ -76,9 +78,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 💡 **أوامر سريعة (اختيارية):**""")
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # الصور
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 جاري تحليل الصورة...")
     image_path = None
@@ -102,9 +104,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # البحث
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args) if context.args else None
     if not query:
@@ -115,9 +117,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(result)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # تنفيذ الأكواد
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     code = " ".join(context.args) if context.args else None
     if not code:
@@ -129,9 +131,9 @@ async def code_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(formatted)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # المصاريف
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def spent_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     args = context.args
@@ -165,9 +167,9 @@ async def expenses_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(report)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # الإيميل
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def setemail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if len(args) < 2:
@@ -186,7 +188,7 @@ async def setemail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
+    user_name = update.eective_user.first_name
     report = await generate_daily_report(user_id, user_name)
     await update.message.reply_text(report)
     if email_service.is_configured():
@@ -196,9 +198,9 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(msg)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # المواقع
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def addsite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     args = context.args
@@ -232,9 +234,9 @@ async def deepcheck_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # البناء الذاتي
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def build_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not context.args:
@@ -245,7 +247,7 @@ async def build_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     name = context.args[0]
     desc = " ".join(context.args[1:]) if len(context.args) > 1 else name
-    await update.message.reply_text(f"🔨 جاري بناء: {name}...\n⏳ أكتب الكود وأختبره...")
+    await update.message.reply_text(f"🔨 جاري بناء: {name}...\n⏳ أكتب الكود واختبره...")
     success, log = await build_feature(user_id, name, desc)
     log_text = "\n".join(log)
     if success:
@@ -283,9 +285,9 @@ async def features_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # الأدوات
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def password_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     length = int(context.args[0]) if context.args else 16
     password, strength = generate_password(length)
@@ -319,24 +321,24 @@ async def shorturl_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ {result['error']}")
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # الأوامر الأساسية
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def skills_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     skills = await get_skills(user_id)
     msg = """🧠 **المهارات المدمجة:**
-  ✅ 🔍 بحث الإنترنت
-  ✅ 💻 تنفيذ الأكواد
-  ✅ 🖼️ تحليل الصور
-  ✅ 📧 إرسال إيميلات
-  ✅ 💰 تتبع المصاريف
-  ✅ 🔐 كلمات مرور
-  ✅ 📱 QR Code
-  ✅ 🔗 تقصير روابط
-  ✅ 🌐 فحص المواقع
-  ✅ 📊 تقارير
-  ✅ 🔧 بناء ذاتي
+   ✅ 🔍 بحث الإنترنت
+   ✅ 💻 تنفيذ الأكواد
+   ✅ 🖼️ تحليل الصور
+   ✅ 📧 إرسال إيميلات
+   ✅ 💰 تتبع المصاريف
+   ✅ 🔐 كلمات مرور
+   ✅ 📱 QR Code
+   ✅ 🔗 تقصير روابط
+   ✅ 🌐 فحص المواقع
+   ✅ 📊 تقارير
+   ✅ 🔧 بناء ذاتي
 """
     if skills:
         msg += "\n🧠 **مهارات مُتعلمة:**\n"
@@ -435,11 +437,12 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    import aiosqlite
-    from config import DB_PATH
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM conversations WHERE user_id=?", (user_id,))
-        await db.commit()
+    async with get_db_connection() as conn:
+        if DB_TYPE == "postgresql":
+            await conn.execute("DELETE FROM conversations WHERE user_id=$1", user_id)
+        else:
+            await conn.execute("DELETE FROM conversations WHERE user_id=?", (user_id,))
+            await conn.commit()
     await update.message.reply_text("🗑️ تم مسح المحادثات!")
 
 
@@ -449,9 +452,9 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_lines = [f"🟢 {AGENT_NAME} يعمل", f"🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"]
     try:
         import groq
-        status_lines.append("✅ groq SDK متوفر")
+        status_lines.append("✅ grok SDK متوفر")
     except ImportError:
-        status_lines.append("❌ groq SDK مفقود")
+        status_lines.append("❌ grok SDK مفقود")
     try:
         import telegram
         status_lines.append(f"✅ PTB {telegram.__version__}")
@@ -460,9 +463,9 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(status_lines))
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # معالجة الرسائل
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_name = update.effective_user.first_name
@@ -484,9 +487,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🤖: {raw_reply[:50]}")
 
 
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 # التشغيل
-# ═══════════════════════════════════════
+# ═══════════════════════════════════════════
 async def _post_init(application):
     """يباشَر بعد بناء التطبيق: تشغيل المهام الخلفية."""
     asyncio.create_task(background_scheduler(application.bot))

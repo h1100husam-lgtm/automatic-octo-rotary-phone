@@ -38,16 +38,23 @@ OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 # قاعدة البيانات
 # على Render: نستخدم disk path لو موجود، وإلا نستخدم path عادي
-# PostgreSQL مدعوم أيضًا عبر DATABASE_URL (لو متوفرة)
+# PostgreML مدعوم أيضًا عبر DATABASE_URL (لو متوفرة)
 import os as _os
 _RENDER_DISK = "/var/data"
-if _os.path.isdir(_RENDER_DISK):
-    DB_PATH = _os.path.join(_RENDER_DISK, "agent_memory.db")
-else:
-    DB_PATH = _os.environ.get("DB_PATH", "agent_memory.db")
-
-# متغير DATABASE_URL لو أردت PostgreSQL لاحقًا (مُتماعيد Render)
 DATABASE_URL = _os.environ.get("DATABASE_URL", "")
+
+if DATABASE_URL:
+    # استخدام PostgreSQL
+    DB_TYPE = "postgresql"
+    DATABASE_URI = DATABASE_URL
+else:
+    # استخدام SQLite
+    DB_TYPE = "sqlite"
+    if _os.path.isdir(_RENDER_DISK):
+        DB_PATH = _os.path.join(_RENDER_DISK, "agent_memory.db")
+    else:
+        DB_PATH = _os.environ.get("DB_PATH", "agent_memory.db")
+    DATABASE_URI = f"sqlite:///{DB_PATH}"
 
 # ═══════════════════════════════════════════
 # الـ Agent - الشخصية + الأسلوب

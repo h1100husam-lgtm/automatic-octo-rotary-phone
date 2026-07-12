@@ -1,56 +1,100 @@
-# ═══════════════════════════════════════════
-# مدير اتصالات قاعدة البيانات - Connection Pool
-# ═══════════════════════════════════════════
-import aiosqlite
+# ════════════════════════════════════════════
+# قاعدة بيانات مجمعة للاتصالات (PostgreSQL) أو اتصال واحد (SQLite)
+# ════════════════════════════════════════════
+import asyncio
+import logging
+from typing import AsyncIterator, Optional, Any
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
-from config import DB_PATH
+
+import aiosqlite
+# Optional asyncpg for PostgreSQL
+try:
+    import asyncpg
+except ImportError:
+    asyncpg = None
+
+from config import DB_TYPE, DATABASE_URI, DB_PATH
+
+logger = logging.getLogger("agent.db_pool")
+
+# global pool for PostgreSQL
+_db_pool: Optional[Any] = None
+# global connection for SQLite (we'll keep a single connection for simplicity)
+_sqlite_conn: Optional[aiosqlite.Connection] = None
+# lock for sqlite connection initialization
+_sqlite_lock = asyncio.Lock()
 
 
-class DatabasePool:
-    """Connection pool بسيط لقاعدة البيانات SQLite."""
-    _instance = None
-    _connection = None
-
-    @classmethod
-    async def get_instance(cls) -> "DatabasePool":
-        if cls._instance is None:
-            cls._instance = DatabasePool()
-            await cls._instance._init_connection()
-        return cls._instance
-
-    async def _init_connection(self):
-        """تهيئة الاتصال الدائم."""
-        self._connection = await aiosqlite.connect(DB_PATH)
-        self._connection.row_factory = aiosqlite.Row
-        await self._connection.execute("PRAGMA journal_mode=WAL")
-        await self._connection.execute("PRAGMA synchronous=NORMAL")
-        await self._connection.commit()
-
-    @classmethod
-    @asynccontextmanager
-    async def get_connection(cls) -> AsyncIterator[aiosqlite.Connection]:
-        """الحصول على اتصال من pool."""
-        if cls._instance is None:
-            await cls.get_instance()
-        if cls._instance._connection is None:
-            await cls._instance._init_connection()
-        yield cls._instance._connection
-
-    @classmethod
-    async def close(cls):
-        """إغلاق الاتصال عند التوقف."""
-        if cls._instance and cls._instance._connection:
-            await cls._instance._connection.close()
-            cls._instance._connection = None
-        cls._instance = None
-
-
-def get_db():
-    """shortcut لـ get_connection."""
-    return DatabasePool.get_connection()
+async def init_db_pool() -> None:
+    """Initialize the database connection pool (PostgreSQL) or connection (SQLite)."""
+    global _db_pool, _sqlite_conn
+    if DB_TYPE == "postgresql":
+        if asyncpg is None:
+            raise RuntimeError("asyncpg is not installed. Please install it to use PostgreSQL.")
+        try:
+            _db_pool = await asyncpg.create_pool(
+                DATABASE_URI,
+                min_size=1,
+                max_size=10,
+                command_timeout=60,
+            )
+            logger.info("✅ تم إنشاء مجموعة اتصالات PostgreSQL")
+        except Exception as e:
+            logger.error(f"فشل إنشاء مجموعة اتصالات PostgreSQL: {e}")
+            raise
+    else:
+        # SQLite: create a single connection (we'll reuse it)
+        async with _sqlite_lock:
+            if _sqlite_conn is None:
+                try:
+                    # DATABASE_URI is like "sqlite:///path/to/db"
+                    # aiosqlite expects just the path
+                    db_path = DATABASE_URI.replace("sqlite:///", "")
+                    _sqlite_conn = await aiosqlite.connect(db_path)
+                    # Apply performance pragmas
+                    await _sqlite_conn.execute("PRAGMA journal_mode=WAL")
+                    await _sqlite_conn.execute("PRAGMA synchronous=NORMAL")
+                    await _sqlite_conn.execute("PRAGMA busy_timeout=5000")
+                    await _sqlite_conn.execute("PRAGMA cache_size=-8000")  # 8MB cache
+                    await _sqlite_conn.commit()
+                    logger.info("✅ تم إنشاء اتصال SQLite")
+                except Exception as e:
+                    logger.error(f"فشل إنشاء اتصال SQLite: {e}")
+                    raise
 
 
-async def close_db():
-    """shortcut لإغلاق الاتصال."""
-    await DatabasePool.close()
+@asynccontextmanager
+async def get_db_connection() -> AsyncIterator:
+    """Get a database connection from the pool (PostgreSQL) or the single connection (SQLite)."""
+    if DB_TYPE == "postgresql":
+        if _db_pool is None:
+            await init_db_pool()
+        assert _db_pool is not None
+        async with _db_pool.acquire() as connection:
+            yield connection
+    else:
+        # SQLite
+        async with _sqlite_lock:
+            if _sqlite_conn is None:
+                await init_db_pool()
+        assert _sqlite_conn is not None
+        yield _sqlite_conn
+
+
+async def close_db_pool() -> None:
+    """Close the database pool or connection."""
+    global _db_pool, _sqlite_conn
+    if DB_TYPE == "postgresql":
+        if _db_pool is not None:
+            await _db_pool.close()
+            _db_pool = None
+            logger.info("🔌 تم إغلاق مجموعة اتصالات PostgreSQL")
+    else:
+        if _sqlite_conn is not None:
+            await _sqlite_conn.close()
+            _sqlite_conn = None
+            logger.info("🔌 تم إغلاق اتصال SQLite")
+
+
+# Alias for backward compatibility
+close_db = close_db_pool

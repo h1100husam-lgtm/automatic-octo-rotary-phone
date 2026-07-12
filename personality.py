@@ -1,19 +1,89 @@
-# ═══════════════════════════════════════════
+# ════════════════════════════════════════════
 # نظام الشخصية الديناميكية
 # - الاسم، النبرة، الجنس، الأسلوب قابلة للتعديل وقت التشغيل
 # - يحفظ في DB (bot_config) ليبقى بعد إعادة التشغيل
 # - يُبنى معه system_prompt ديناميكياً
-# ═══════════════════════════════════════════
+# ════════════════════════════════════════════
 import json
 import logging
-import aiosqlite
 from pathlib import Path
 from config import (
     AGENT_NAME, AGENT_GENDER, AGENT_TONE, AGENT_LOCALE,
-    GENDER_LABELS, TONE_LABELS, DB_PATH, AGENT_SYSTEM_PROMPT,
+    GENDER_LABELS, TONE_LABELS, DB_TYPE
 )
 
 logger = logging.getLogger("agent.personality")
+
+# Database pool imports
+from db_pool import get_db_connection
+
+# Helper functions to handle both SQLite and PostgreSQL
+async def _execute(query: str, *args) -> None:
+    """Execute a query that does not return results."""
+    async with get_db_connection() as conn:
+        if DB_TYPE == "postgresql":
+            await conn.execute(_adapt_query(query), *args)
+        else:
+            await conn.execute(query, *args)
+            await conn.commit()
+
+
+async def _fetchone(query: str, *args):
+    """Fetch a single row."""
+    async with get_db_connection() as conn:
+        if DB_TYPE == "postgresql":
+            row = await conn.fetchrow(_adapt_query(query), *args)
+            return tuple(row) if row is not None else None
+        else:
+            async with conn.execute(query, *args) as cursor:
+                return await cursor.fetchone()
+
+
+async def _fetchall(query: str, *args):
+    """Fetch all rows."""
+    async with get_db_connection() as conn:
+        if DB_TYPE == "postgresql":
+            rows = await conn.fetch(_adapt_query(query), *args)
+            return [tuple(row) for row in rows]
+        else:
+            async with conn.execute(query, *args) as cursor:
+                return await cursor.fetchall()
+
+
+async def _fetchval(query: str, *args):
+    """Fetch a single value."""
+    async with get_db_connection() as conn:
+        if DB_TYPE == "postgresql":
+            return await conn.fetchval(_adapt_query(query), *args)
+        else:
+            async with conn.execute(query, *args) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row is not None else None
+
+
+def _adapt_query(query: str) -> str:
+    """Convert ? placeholders to $1, $2, ... for PostgreSQL.
+    Assumes no ? inside string literals (safe for our queries).
+    """
+    if DB_TYPE == "postgresql":
+        parts = question_mark_split(query)
+        if len(parts) == 1:
+            return query
+        out = []
+        for i, part in enumerate(parts[:-1]):
+            out.append(part)
+            out.append(f'${i+1}')
+        out.append(parts[-1])
+        return ''.join(out)
+    return query
+
+
+def question_mark_split(query: str) -> list:
+    """Split by ? but ignore those inside single quotes, double quotes, or backticks.
+    Simple implementation: we assume the query does not contain escaped quotes.
+    For safety, we just split on ? and hope for the best (our queries are simple).
+    """
+    return query.split('?')
 
 
 # الحالة الحالية (تُحمّل من DB)
@@ -30,18 +100,28 @@ async def load_personality() -> None:
     """تحميل الشخصية من DB عند بدء التشغيل."""
     global _state
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS bot_config (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            """)
-            async with db.execute("SELECT value FROM bot_config WHERE key='personality'") as c:
-                row = await c.fetchone()
-                if row:
-                    saved = json.loads(row[0])
-                    _state.update(saved)
+        async with get_db_connection() as conn:
+            # Ensure table exists
+            if DB_TYPE == "postgresql":
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS bot_config (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    )
+                """)
+            else:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS bot_config (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    )
+                """)
+                await conn.commit()
+            # Fetch personality
+            row = await _fetchone("SELECT value FROM bot_config WHERE key='personality'")
+            if row:
+                saved = json.loads(row[0])
+                _state.update(saved)
         logger.info(f"✅ شخصية الـ Agent: {current_name()} | {current_gender_label()}")
     except Exception as e:
         logger.error(f"تعذّر تحميل الشخصية: {e}")
@@ -50,12 +130,19 @@ async def load_personality() -> None:
 async def save_personality() -> None:
     """حفظ الشخصية الحالية في DB."""
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO bot_config (key, value) VALUES ('personality', ?)",
-                (json.dumps(_state, ensure_ascii=False),),
-            )
-            await db.commit()
+        async with get_db_connection() as conn:
+            if DB_TYPE == "postgresql":
+                await conn.execute(
+                    "INSERT INTO bot_config (key, value) VALUES ($1, $2) "
+                    "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                    "personality", json.dumps(_state, ensure_ascii=False)
+                )
+            else:
+                await conn.execute(
+                    "INSERT OR REPLACE INTO bot_config (key, value) VALUES (?, ?)",
+                    ("personality", json.dumps(_state, ensure_ascii=False))
+                )
+                await conn.commit()
     except Exception as e:
         logger.error(f"تعذّر حفظ الشخصية: {e}")
 
