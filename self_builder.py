@@ -1,4 +1,4 @@
-# ════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════
 # محرك البناء الذاتي
 # الـ Agent يكتب كود ويضيفه لنفسه!
 # ═══════════════════════════════════════════
@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import logging
 from datetime import datetime
+from typing import Any, List, Tuple, Optional, Dict
 from config import DB_PATH, GROQ_API_KEY, AI_MODEL, DB_TYPE
 from sandbox import validate_code, sanitize_input
 from db_pool import get_db_connection
@@ -83,9 +84,9 @@ def question_mark_split(query: str) -> list:
     return query.split('?')
 
 
-# ════════════════════════════════════════════
+# ═══════════════════════════════════════════
 # جدول الميزات المبنية ذاتياً
-# ════════════════════════════════════════════
+# ═══════════════════════════════════════════
 async def init_self_builder():
     """تهيئة جدول البناء الذاتي"""
     async with get_db_connection() as conn:
@@ -164,9 +165,9 @@ async def generate_feature_code(feature_name, feature_description, user_context=
 الوصف: {feature_description}
 السياق: {user_context}
 
-═════════════════════════════════════════════
-قواعد مهمة:
 ════════════════════════════════════════════
+قواعد مهمة:
+═══════════════════════════════════════════
 1. اكتب الدالة فقط (لا تستورد مكتبات غير موجودة)
 2. الدالة تكون async
 3. اسم الدالة: feature_{feature_name.replace(' ', '_').lower()}
