@@ -139,3 +139,4 @@ TONE_LABELS = {
     "casual": "عادية وعفوية",
     "professional": "احترافية ومباشرة",
 }
+
